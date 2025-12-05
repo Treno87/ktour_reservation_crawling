@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KTour 예약 크롤러</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 KTour 예약 크롤러</h1>
+            <p class="subtitle">예약 현황을 자동으로 수집하고 분석하세요</p>
+        </header>
+
+        <main>
+            <!-- 크롤링 설정 폼 -->
+            <section class="form-section">
+                <h2>크롤링 설정</h2>
+
+                <form id="crawling-form">
+                    <!-- 상호명 -->
+                    <div class="form-group">
+                        <label for="store_name">상호명</label>
+                        <input
+                            type="text"
+                            id="store_name"
+                            name="store_name"
+                            value="마리엠헤어"
+                            placeholder="검색할 상호명을 입력하세요"
+                            required
+                        >
+                    </div>
+
+                    <!-- 날짜 범위 -->
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="start_date">시작 날짜</label>
+                            <input
+                                type="date"
+                                id="start_date"
+                                name="start_date"
+                                required
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label for="end_date">종료 날짜</label>
+                            <input
+                                type="date"
+                                id="end_date"
+                                name="end_date"
+                                required
+                            >
+                        </div>
+                    </div>
+
+                    <!-- 크롤링 주기 -->
+                    <div class="form-group">
+                        <label>크롤링 주기</label>
+                        <div class="radio-group">
+                            <label class="radio-label">
+                                <input type="radio" name="mode" value="daily" checked>
+                                <span>일단위</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="mode" value="weekly">
+                                <span>주단위</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="mode" value="monthly">
+                                <span>월단위</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 출력 형식 -->
+                    <div class="form-group">
+                        <label for="output_format">출력 형식</label>
+                        <select id="output_format" name="output_format">
+                            <option value="csv">CSV</option>
+                            <option value="excel">Excel (XLSX)</option>
+                            <option value="json">JSON</option>
+                        </select>
+                    </div>
+
+                    <!-- 구글 시트 설정 -->
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="google_sheets" name="google_sheets">
+                            <span>구글 시트에 자동 저장 (중복 제거, 날짜순 정렬)</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group" id="sheets-url-group" style="display: none;">
+                        <label for="sheets_url">구글 시트 URL</label>
+                        <input
+                            type="url"
+                            id="sheets_url"
+                            name="sheets_url"
+                            placeholder="https://docs.google.com/spreadsheets/d/..."
+                        >
+                        <small class="form-hint">
+                            스프레드시트 URL을 입력하세요. 예약번호 기준으로 중복이 자동 제거되고 날짜순으로 정렬됩니다.
+                        </small>
+                    </div>
+
+                    <!-- 실행 버튼 -->
+                    <div class="form-actions">
+                        <button type="submit" id="start-btn" class="btn btn-primary">
+                            크롤링 시작
+                        </button>
+                        <button type="button" id="quick-today-btn" class="btn btn-secondary">
+                            오늘 날짜로 빠른 시작
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- 진행 상황 -->
+            <section class="progress-section" id="progress-section" style="display: none;">
+                <h2>크롤링 진행 상황</h2>
+
+                <div class="progress-info">
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="progress-bar"></div>
+                    </div>
+                    <div class="progress-text">
+                        <span id="progress-count">0</span> / <span id="progress-total">0</span>
+                        (<span id="progress-percent">0</span>%)
+                    </div>
+                </div>
+
+                <div class="status-info">
+                    <div class="status-item">
+                        <span class="status-label">현재 날짜:</span>
+                        <span id="current-date" class="status-value">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">상태:</span>
+                        <span id="status-message" class="status-value">대기 중</span>
+                    </div>
+                </div>
+
+                <!-- 결과 다운로드 -->
+                <div id="result-section" style="display: none;">
+                    <div class="result-box">
+                        <h3>✅ 크롤링 완료!</h3>
+                        <p id="result-message"></p>
+                        <button id="download-btn" class="btn btn-success">
+                            결과 파일 다운로드
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 파일 목록 -->
+            <section class="files-section">
+                <div class="section-header">
+                    <h2>저장된 파일 목록</h2>
+                    <button id="refresh-files-btn" class="btn btn-small">새로고침</button>
+                </div>
+
+                <div id="files-list" class="files-list">
+                    <p class="loading">파일 목록을 불러오는 중...</p>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>&copy; 2025 KTour 예약 크롤러. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
