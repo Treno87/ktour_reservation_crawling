@@ -406,7 +406,11 @@ class KTourCrawler:
                     By.CSS_SELECTOR,
                     'p.MuiTypography-root.MuiTypography-subtitle2.css-1q5lgor'
                 )
-                reservation['product'] = product.text
+                product_text = product.text
+                # "AB: " 제거 (대소문자 구분 없이)
+                if ':' in product_text:
+                    product_text = product_text.split(':', 1)[1].strip()
+                reservation['product'] = product_text
             except:
                 pass
 
@@ -416,7 +420,11 @@ class KTourCrawler:
                     By.CSS_SELECTOR,
                     'p.MuiTypography-root.MuiTypography-subtitle2.css-17exa0r'
                 )
-                reservation['time_request'] = time_request.text
+                time_text = time_request.text
+                # "Time Request: " 제거
+                if ':' in time_text:
+                    time_text = time_text.split(':', 1)[1].strip()
+                reservation['time_request'] = time_text
             except:
                 pass
 
