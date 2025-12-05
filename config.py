@@ -5,8 +5,8 @@ from dotenv import load_dotenv
 # 환경변수 로드
 load_dotenv()
 
-# 사이트 정보
-BASE_URL = "https://guide.ktourstory.com/"
+# 사이트 정보 (환경변수에서 로드)
+BASE_URL = os.getenv('BASE_URL', "https://guide.ktourstory.com/")
 
 # 로그인 정보 (환경변수에서 로드)
 LOGIN_ID = os.getenv('LOGIN_ID')
