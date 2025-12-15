@@ -42,6 +42,13 @@ output/
 *.csv
 *.xlsx
 *.json
+!prices.json
+
+# Credentials
+credentials.json
+
+# Claude Code
+.claude/
 
 # Environment variables
 .env

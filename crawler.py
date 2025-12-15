@@ -261,18 +261,22 @@ class KTourCrawler:
             self.logger.error(f"OK 버튼 클릭 실패: {e}")
             raise
 
-    def click_store(self, store_name="마리엠헤어"):
+    def click_store(self, store_name="마리엠헤어", timeout=None):
         """
         상호 클릭
 
         Args:
             store_name (str): 클릭할 상호명
+            timeout (int): 대기 시간 (초), None이면 기본값 사용
 
         Raises:
             TimeoutException: 상호 요소를 찾지 못한 경우 (예약 없음)
             NoSuchElementException: 상호 요소가 없는 경우 (예약 없음)
         """
-        store_element = self.wait.until(
+        wait_time = timeout if timeout is not None else config.EXPLICIT_WAIT
+        wait = WebDriverWait(self.driver, wait_time)
+        
+        store_element = wait.until(
             EC.element_to_be_clickable((By.XPATH, f'//h6[text()="{store_name}"]'))
         )
         store_element.click()
@@ -283,16 +287,18 @@ class KTourCrawler:
     def get_team_list(self):
         """팀 목록 가져오기"""
         try:
-            # 팀 정보가 있는 요소들 찾기
+            # 팀 정보가 있는 li 요소들 찾기 (사용자 제공 XPath 기반)
+            # MuiListSubheader-root 클래스를 가진 li 요소들
             team_elements = self.driver.find_elements(
-                By.CSS_SELECTOR,
-                'div.MuiBox-root.css-k008qs'
+                By.XPATH,
+                '//ul/li[contains(@class, "MuiListSubheader-root")]'
             )
 
             teams = []
             for element in team_elements:
                 try:
-                    team_chips = element.find_elements(By.CSS_SELECTOR, 'div.MuiChip-root')
+                    # li 내부에서 팀 이름 찾기
+                    team_chips = element.find_elements(By.CSS_SELECTOR, 'span.MuiChip-label')
                     if team_chips:
                         team_name = team_chips[0].text
                         teams.append({'name': team_name, 'element': element})
@@ -309,28 +315,31 @@ class KTourCrawler:
     def click_team(self, team_element):
         """팀 클릭"""
         try:
-            team_element.click()
+            # li 요소 내부의 펼치기 버튼 찾기
+            expand_button = team_element.find_element(
+                By.XPATH,
+                './/button[contains(@class, "MuiIconButton-root")]'
+            )
+            expand_button.click()
             time.sleep(config.MEDIUM_DELAY)
-            self.logger.info("팀 클릭 완료")
+            self.logger.info("팀 펼치기 완료")
 
         except Exception as e:
-            self.logger.error(f"팀 클릭 실패: {e}")
+            self.logger.error(f"팀 펼치기 실패: {e}")
             raise
 
-    def extract_reservation_details(self, target_date):
+    def extract_reservation_details(self, target_date, team_name):
         """
-        예약 상세 정보 추출
-
-        Args:
-            target_date (str): 예약 날짜 (YYYY-MM-DD)
-
-        Returns:
-            dict: 예약 정보
+        예약 상세 정보 추출 (특정 팀 이름에 해당하는 섹션에서 데이터 추출)
         """
+        # 암시적 대기 시간 임시 변경
+        original_wait = config.IMPLICIT_WAIT
+        self.driver.implicitly_wait(1)
+
         try:
             reservation = {
                 'date': target_date,
-                'team': '',
+                'team': team_name, # 팀 이름은 이미 알고 있으므로 바로 할당
                 'customer_name': '',
                 'reservation_number': '',
                 'channel': '',
@@ -340,100 +349,132 @@ class KTourCrawler:
                 'time_request': ''
             }
 
-            # 팀 정보
+            # 1. 현재 펼쳐진 영역(MuiCollapse-entered)을 찾음
+            # MUI Accordion 구조상 펼쳐진 내용은 'MuiCollapse-entered' 클래스를 가짐
             try:
-                team_label = self.driver.find_element(
-                    By.CSS_SELECTOR,
-                    'span.MuiChip-label.MuiChip-labelSmall.css-19imqg1'
-                )
-                reservation['team'] = team_label.text
+                # 펼쳐진 영역 찾기 (Transition 등이 있을 수 있으므로 잠시 대기할 수도 있음)
+                # visible 상태인 collapse root를 찾습니다.
+                container = self.driver.find_element(By.CSS_SELECTOR, 'div.MuiCollapse-entered')
             except:
-                pass
+                # 만약 entered가 없다면 아직 펼쳐지는 중일 수 있으니 vertical이나 visible 확인
+                try:
+                     container = self.driver.find_element(By.CSS_SELECTOR, 'div.MuiCollapse-root[style*="visible"]')
+                except:
+                     self.logger.warning(f"펼쳐진 예약 상세 영역을 찾을 수 없음: {team_name}")
+                     return None
 
-            # 고객명
-            try:
-                customer_name = self.driver.find_element(
-                    By.CSS_SELECTOR,
-                    'h6.MuiTypography-root.MuiTypography-subtitle1.css-qdk4z1'
-                )
-                reservation['customer_name'] = customer_name.text
-            except:
-                pass
+            # 2. 컨테이너 내부의 모든 예약 항목(ListItemButton)을 찾음
+            # 제공된 HTML 구조: div.MuiListItemButton-root ...
+            reservation_items = container.find_elements(By.CSS_SELECTOR, 'div.MuiListItemButton-root')
+            
+            extracted_reservations = []
 
-            # 예약번호
-            try:
-                reservation_number = self.driver.find_element(
-                    By.CSS_SELECTOR,
-                    'h6.MuiTypography-root.MuiTypography-subtitle2.css-1r042ka'
-                )
-                reservation['reservation_number'] = reservation_number.text
-            except:
-                pass
+            for item in reservation_items:
+                try:
+                    reservation = {
+                        'date': target_date,
+                        'team': team_name,
+                        'customer_name': '',
+                        'reservation_number': '',
+                        'channel': '',
+                        'people_count': '',
+                        'country': '',
+                        'product': '',
+                        'time_request': ''
+                    }
 
-            # 채널약자
-            try:
-                channel = self.driver.find_element(
-                    By.CSS_SELECTOR,
-                    'div.MuiAvatar-root.MuiAvatar-circular.MuiAvatar-colorDefault.MuiChip-avatar.MuiChip-avatarSmall.MuiChip-avatarColorPrimary.css-1buxfho'
-                )
-                reservation['channel'] = channel.text
-            except:
-                pass
+                    def get_text_from_item(xpath_suffix):
+                        try:
+                            return item.find_element(By.XPATH, xpath_suffix).text
+                        except:
+                            return ''
 
-            # 인원구분 및 수
-            try:
-                people_count = self.driver.find_element(
-                    By.CSS_SELECTOR,
-                    'p.MuiTypography-root.MuiTypography-subtitle2.css-mdkayp'
-                )
-                reservation['people_count'] = people_count.text.strip()
-            except:
-                pass
+                    # 고객명: MuiListItemText-primary 내부의 h6
+                    reservation['customer_name'] = get_text_from_item(
+                        './/div[contains(@class, "MuiListItemText-primary")]//h6[contains(@class, "MuiTypography-subtitle1")]'
+                    )
 
-            # 국가
-            try:
-                country = self.driver.find_element(
-                    By.CSS_SELECTOR,
-                    'span.MuiTypography-root.MuiTypography-subtitle2.css-xcju41'
-                )
-                reservation['country'] = country.text
-            except:
-                pass
+                    # 예약번호: MuiChip-label 내부의 h6 (예: YYA187985)
+                    reservation['reservation_number'] = get_text_from_item(
+                        './/span[contains(@class, "MuiChip-label")]//h6[contains(@class, "MuiTypography-subtitle2")]'
+                    )
+                    
+                    # 예약번호가 없으면 이전 방식 시도 (Reservation Number 패턴 매칭)
+                    if not reservation['reservation_number']:
+                        try:
+                            elements = item.find_elements(By.XPATH, './/h6')
+                            for el in elements:
+                                txt = el.text
+                                # 대문자 영문 + 숫자 조합이고 길이가 5 이상인 경우 예약번호로 추정
+                                if txt and len(txt) > 5 and any(c.isalpha() for c in txt) and any(c.isdigit() for c in txt):
+                                    reservation['reservation_number'] = txt
+                                    break
+                        except:
+                            pass
 
-            # 예약상품
-            try:
-                product = self.driver.find_element(
-                    By.CSS_SELECTOR,
-                    'p.MuiTypography-root.MuiTypography-subtitle2.css-1q5lgor'
-                )
-                product_text = product.text
-                # "AB: " 제거 (대소문자 구분 없이)
-                if ':' in product_text:
-                    product_text = product_text.split(':', 1)[1].strip()
-                reservation['product'] = product_text
-            except:
-                pass
+                    # 채널약자
+                    reservation['channel'] = get_text_from_item(
+                        './/div[contains(@class, "MuiChip-avatar")]'
+                    )
 
-            # 예약시간
-            try:
-                time_request = self.driver.find_element(
-                    By.CSS_SELECTOR,
-                    'p.MuiTypography-root.MuiTypography-subtitle2.css-17exa0r'
-                )
-                time_text = time_request.text
-                # "Time Request: " 제거
-                if ':' in time_text:
-                    time_text = time_text.split(':', 1)[1].strip()
-                reservation['time_request'] = time_text
-            except:
-                pass
+                    # 인원구분 및 수 (예: Ad: 1 Kd: 0 Bb: 0)
+                    reservation['people_count'] = get_text_from_item(
+                        './/p[contains(@class, "MuiTypography-subtitle2") and contains(text(), "Ad:")]'
+                    )
 
-            self.logger.info(f"예약 정보 추출 완료: {reservation['reservation_number']}")
-            return reservation
+                    # 국가
+                    reservation['country'] = get_text_from_item(
+                        './/span[contains(@class, "MuiTypography-subtitle2") and contains(@class, "css-xcju41")]'
+                    )
+                    # 국기가 별도 span이나 이모지로 있을 수 있으므로 국가명만 추출 시도할 수도 있음
+
+                    # 예약상품
+                    product_text = get_text_from_item(
+                        './/div[contains(@class, "MuiGrid-grid-xs-10")]//p[contains(@class, "MuiTypography-subtitle2")]'
+                    )
+                    if ':' in product_text:
+                        product_text = product_text.split(':', 1)[1].strip()
+                    reservation['product'] = product_text
+
+                    # 예약시간 (Time Request: 11:30 또는 그냥 10:00)
+                    import re
+                    time_text = ''
+                    # 모든 p 태그를 뒤져서 시간 형식이 있는지 확인
+                    p_elements = item.find_elements(By.XPATH, './/p[contains(@class, "MuiTypography-subtitle2")]')
+                    for p in p_elements:
+                        txt = p.text
+                        # HH:MM 형식 찾기 (Time Request: 포함 여부 무관, 전각 콜론 포함)
+                        match = re.search(r'(\d{1,2}[:：]\d{2})', txt)
+                        if match:
+                            # 2025 같은 연도나 예약번호랑 헷갈리지 않게, : 앞뒤가 숫자인지 확인됨
+                            # 추가 검증: Time Request나 Session 등이 있거나, 길이가 짧은 경우
+                            if any(keyword in txt for keyword in ['Time Request', 'Session', 'Time']):
+                                time_text = match.group(1).replace('：', ':') # 정규화
+                                break
+                            elif len(txt.strip()) < 15 and match.group(1) in txt: # 짧은 텍스트
+                                time_text = match.group(1).replace('：', ':')
+                                break
+                    
+                    reservation['time_request'] = time_text
+
+                    if reservation['reservation_number']:
+                        extracted_reservations.append(reservation)
+                        self.logger.info(f"예약 정보 추출 성공 ({team_name}): {reservation['customer_name']} / {reservation['reservation_number']}")
+                
+                except Exception as e:
+                    self.logger.error(f"개별 예약 항목 추출 중 오류: {e}")
+                    continue
+
+            return extracted_reservations
 
         except Exception as e:
             self.logger.error(f"예약 정보 추출 실패: {e}")
-            return None
+            return []
+
+        finally:
+            # 대기 시간 원복
+            self.driver.implicitly_wait(original_wait)
+
 
     def crawl_date(self, target_date):
         """
@@ -451,6 +492,11 @@ class KTourCrawler:
             month = date_obj.month
             day = date_obj.day
 
+            # 월요일(0) 체크: 월요일은 휴무이므로 스킵
+            if date_obj.weekday() == 0:
+                self.logger.info(f"{target_date}는 월요일(휴무)이므로 건너뜁니다.")
+                return
+
             # 날짜 선택 프로세스
             self.click_date_picker()
             self.select_month(year, month)
@@ -458,8 +504,9 @@ class KTourCrawler:
             self.click_ok_button()
 
             # 상호 클릭 시도
+            # 상호 클릭 시도 (예약 확인용이므로 짧게 3초만 대기)
             try:
-                self.click_store()
+                self.click_store(timeout=3)
             except (TimeoutException, NoSuchElementException) as e:
                 self.logger.info(f"날짜 {target_date}에 예약이 없습니다 (상호 없음)")
                 return  # 예약이 없는 경우 정상 종료
@@ -472,21 +519,39 @@ class KTourCrawler:
                 self.logger.info(f"날짜 {target_date}에 예약이 없습니다 (팀 없음)")
                 return
 
-            # 각 팀별로 예약 정보 수집
-            for team_info in teams:
+            # 각 팀별로 예약 정보 수집 (stale element 방지)
+            for idx in range(len(teams)):
                 try:
+                    # 최신 팀 리스트를 가져옵니다
+                    fresh_teams = self.get_team_list()
+
+                    # 팀 목록이 없으면 상호 클릭 시도 (목록이 닫혔거나 로드되지 않은 경우)
+                    if not fresh_teams:
+                        self.logger.info("팀 목록이 없어 상호를 다시 클릭합니다.")
+                        self.click_store()
+                        time.sleep(config.MEDIUM_DELAY)
+                        fresh_teams = self.get_team_list()
+
+                    if idx >= len(fresh_teams):
+                        self.logger.warning(f"인덱스 {idx}가 최신 팀 리스트 범위를 초과합니다, 중단합니다.")
+                        break
+                    team_info = fresh_teams[idx]
+                    team_name = team_info.get('name', 'UNKNOWN')
+                    self.logger.info(f"팀 {idx+1}/{len(teams)} 처리 시작: {team_name}")
                     self.click_team(team_info['element'])
 
-                    # 예약 상세 정보 추출
-                    reservation = self.extract_reservation_details(target_date)
-                    if reservation:
-                        self.reservations.append(reservation)
+                    # 예약 상세 정보 추출 (리스트 반환됨)
+                    reservations_list = self.extract_reservation_details(target_date, team_name)
+                    if reservations_list:
+                        self.reservations.extend(reservations_list)
 
-                    # 뒤로 가기 (다음 팀을 위해)
-                    self.driver.back()
-                    time.sleep(config.SHORT_DELAY)
+                    # 팀 닫기 (중복 추출 방지)
+                    self.click_team(team_info['element'])
+                    self.logger.info("팀 닫기 완료")
 
                 except Exception as e:
+                    self.logger.error(f"팀 처리 중 오류: {e}")
+                    continue
                     self.logger.error(f"팀 처리 중 오류: {e}")
                     continue
 
@@ -512,7 +577,22 @@ class KTourCrawler:
                 # 각 날짜마다 메인 페이지로 이동하여 상태 초기화
                 if current != start:  # 첫 날짜가 아니면 메인 페이지로 이동
                     self.logger.info("다음 날짜를 위해 메인 페이지로 이동")
-                    self.driver.get(config.BASE_URL)
+                    try:
+                        self.driver.get(config.BASE_URL)
+                    except Exception as e:
+                        # Alert로 인한 에러 발생 시 Alert 처리
+                        self.logger.warning(f"페이지 로드 중 에러 발생 (Alert 가능성): {e}")
+                        try:
+                            alert = self.driver.switch_to.alert
+                            alert_text = alert.text
+                            alert.dismiss()
+                            self.logger.info(f"Alert 팝업 닫기 완료: {alert_text}")
+                            time.sleep(config.SHORT_DELAY)
+                            # Alert 닫은 후 다시 페이지 로드
+                            self.driver.get(config.BASE_URL)
+                        except:
+                            pass
+
                     time.sleep(config.MEDIUM_DELAY)
 
                 date_str = current.strftime('%Y-%m-%d')

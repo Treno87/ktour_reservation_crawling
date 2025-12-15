@@ -172,7 +172,8 @@ class GoogleSheetsManager:
                 'people_count': '인원구분',
                 'country': '국가',
                 'product': '예약상품',
-                'time_request': '예약시간'
+                'time_request': '예약시간',
+                'price': '가격'
             }
             new_df = new_df.rename(columns=column_mapping)
 

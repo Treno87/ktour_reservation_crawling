@@ -31,7 +31,7 @@ MEDIUM_DELAY = 2
 LONG_DELAY = 3
 
 # 구글 시트 설정
-GOOGLE_SHEETS_ENABLED = False  # 구글 시트 사용 여부
+GOOGLE_SHEETS_ENABLED = True  # 구글 시트 사용 여부
 GOOGLE_SHEETS_CREDENTIALS = "credentials.json"  # 서비스 계정 인증 파일
-GOOGLE_SHEETS_URL = ""  # 스프레드시트 URL (예: https://docs.google.com/spreadsheets/d/...)
-GOOGLE_SHEETS_WORKSHEET = "예약현황"  # 워크시트 이름
+GOOGLE_SHEETS_URL = "https://docs.google.com/spreadsheets/d/1xFu0KNT6DDiHRJofGb9YS-S3inpjwfJrttW7z7GV4kA/edit?gid=1692326554#gid=1692326554"  # 스프레드시트 URL
+GOOGLE_SHEETS_WORKSHEET = "crawlingDB"  # 워크시트 이름
