@@ -65,3 +65,10 @@ chromedriver.exe
 # Temporary files
 *.tmp
 temp/
+
+# Test files
+test_*.py
+*_preview.txt
+
+# VS Code workspace
+*.code-workspace
