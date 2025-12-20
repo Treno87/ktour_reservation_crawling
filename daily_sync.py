@@ -1,5 +1,6 @@
 import logging
 import calendar
+import time
 from datetime import datetime, timedelta
 from crawler import KTourCrawler
 from google_sheets_manager import GoogleSheetsManager
@@ -48,10 +49,22 @@ def main():
     # 2. 크롤링 실행
     crawler = KTourCrawler(headless=True)
     crawled_reservations = []
-    
+
     try:
         crawler.setup_driver()
         crawler.login()
+
+        # 로그인 직후 Alert 팝업 처리
+        try:
+            alert = crawler.driver.switch_to.alert
+            alert_text = alert.text
+            alert.dismiss()
+            logger.info(f"Alert 팝업 닫기 완료: {alert_text}")
+            time.sleep(1)  # Alert 닫은 후 짧은 대기
+        except:
+            # Alert이 없으면 무시
+            pass
+
         crawler.crawl_date_range(start_date, end_date)
         crawled_reservations = crawler.get_reservations()
         logger.info(f"Crawled {len(crawled_reservations)} reservations.")
@@ -119,15 +132,16 @@ def main():
         logger.error(f"Error during Google Sheets sync: {e}")
 
     # 7. Slack 알림 전송
-    
+
     # 7-1. 당일(오늘) 예약 현황 (전체 표시 + 신규 표시)
     today_reservations = [r for r in crawled_reservations if r['date'] == today_str]
     today_msg = slack.format_reservation_message(
-        today_reservations, 
-        title=f"📅 오늘({today_str}) 예약 현황",
+        today_reservations,
+        title=f"오늘({today_str}) 예약 현황",
         include_date=False, # 당일은 날짜 생략
         mark_new=True,      # 신규 예약 강조
-        notify_everyone=True # 채널 전체 알림
+        notify_everyone=True, # 채널 전체 알림
+        sheet_url=sheet_url  # 구글 시트 바로가기
     )
     slack.send_message(today_msg)
     
@@ -140,10 +154,11 @@ def main():
     if future_new_reservations:
         future_msg = slack.format_reservation_message(
             future_new_reservations,
-            title=f"🚨 [NEW] 미래({start_date} 이후) 신규 예약 알림",
+            title=f"미래({start_date} 이후) 신규 예약 알림",
             include_date=True, # 미래 예약은 날짜 필수
             mark_new=False,    # 이미 전체가 New이므로 개별 강조 생략
-            notify_everyone=True # 채널 전체 알림
+            notify_everyone=True, # 채널 전체 알림
+            sheet_url=sheet_url  # 구글 시트 바로가기
         )
         slack.send_message(future_msg)
     else:

@@ -110,7 +110,7 @@ class GoogleSheetsManager:
                     '날짜', '팀', '고객명', '예약번호', '채널',
                     '인원구분', '국가', '예약상품', '예약시간'
                 ]
-                worksheet.append_row(headers)
+                worksheet.append_row(headers, value_input_option='USER_ENTERED')
                 self.logger.info("헤더 추가 완료")
 
             return worksheet
@@ -149,7 +149,7 @@ class GoogleSheetsManager:
 
     def remove_duplicates_and_sort(self, existing_df, new_data):
         """
-        중복 제거 및 정렬
+        중복 제거 및 정렬 (기존 수동 입력 데이터 보존)
 
         Args:
             existing_df (pd.DataFrame): 기존 데이터
@@ -177,11 +177,62 @@ class GoogleSheetsManager:
             }
             new_df = new_df.rename(columns=column_mapping)
 
-            # 기존 데이터와 새 데이터 병합
+            # 기존 데이터와 새 데이터 병합 (수동 입력 필드 보존)
             if existing_df.empty:
                 combined_df = new_df
             else:
-                combined_df = pd.concat([existing_df, new_df], ignore_index=True)
+                # 보존할 수동 입력 필드 목록 (확장 가능)
+                manual_fields = ['가격', '메모', '비고', '결제상태']  # 필요시 추가
+
+                # 기존 데이터에서 예약번호와 수동 입력 필드만 추출
+                existing_manual_data = existing_df[['예약번호'] + [col for col in manual_fields if col in existing_df.columns]].copy()
+
+                # 예약번호가 있는 것만 필터링
+                existing_manual_data = existing_manual_data[
+                    existing_manual_data['예약번호'].notna() &
+                    (existing_manual_data['예약번호'] != '')
+                ]
+
+                # 새 데이터와 기존 수동 입력 데이터 병합 (예약번호 기준)
+                if not existing_manual_data.empty:
+                    # 새 데이터에 기존 수동 입력 필드를 병합 (왼쪽 조인)
+                    new_df = new_df.merge(
+                        existing_manual_data,
+                        on='예약번호',
+                        how='left',
+                        suffixes=('', '_existing')
+                    )
+
+                    # 수동 입력 필드가 비어있으면 기존 값으로 채우기
+                    for field in manual_fields:
+                        if field in existing_df.columns:
+                            existing_col = f'{field}_existing'
+                            if existing_col in new_df.columns:
+                                # 새 데이터에 값이 없으면 기존 값 사용
+                                if field not in new_df.columns or new_df[field].isna().all():
+                                    new_df[field] = new_df[existing_col]
+                                else:
+                                    new_df[field] = new_df[field].fillna(new_df[existing_col])
+                                # 임시 컬럼 삭제
+                                new_df = new_df.drop(columns=[existing_col])
+
+                    self.logger.info(f"기존 수동 입력 데이터 보존 완료")
+
+                # 기존 데이터 중 새 데이터에 없는 예약번호만 추출
+                if '예약번호' in existing_df.columns and '예약번호' in new_df.columns:
+                    existing_only = existing_df[
+                        ~existing_df['예약번호'].isin(new_df['예약번호']) &
+                        existing_df['예약번호'].notna() &
+                        (existing_df['예약번호'] != '')
+                    ]
+
+                    if not existing_only.empty:
+                        self.logger.info(f"기존 데이터 중 유지할 데이터: {len(existing_only)}건")
+                        combined_df = pd.concat([new_df, existing_only], ignore_index=True)
+                    else:
+                        combined_df = new_df
+                else:
+                    combined_df = new_df
 
             # 예약번호 기준 중복 제거 (최신 것만 유지)
             if '예약번호' in combined_df.columns:
@@ -220,7 +271,7 @@ class GoogleSheetsManager:
 
             # 헤더 추가
             headers = df.columns.tolist()
-            worksheet.append_row(headers)
+            worksheet.append_row(headers, value_input_option='USER_ENTERED')
 
             # 데이터 추가
             if not df.empty:
@@ -228,7 +279,8 @@ class GoogleSheetsManager:
                 values = df.fillna('').values.tolist()
 
                 # 배치로 추가 (속도 향상)
-                worksheet.append_rows(values)
+                # USER_ENTERED: 구글 시트가 자동으로 숫자, 날짜 등을 인식
+                worksheet.append_rows(values, value_input_option='USER_ENTERED')
 
             self.logger.info(f"워크시트 업데이트 완료: {len(df)}건")
             return True
