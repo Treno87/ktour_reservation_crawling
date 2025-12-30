@@ -1,6 +1,8 @@
 # 크롤링 설정 파일
 import os
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
+import calendar
 
 # 환경변수 로드
 load_dotenv()
@@ -22,8 +24,11 @@ OUTPUT_DIR = "output"
 OUTPUT_FORMAT = "csv"  # csv 또는 json
 
 # 크롤링할 날짜 범위 (YYYY-MM-DD 형식) - 환경변수에서 로드
-START_DATE = os.getenv('START_DATE', "2025-12-05")
-END_DATE = os.getenv('END_DATE', "2025-12-31")
+# 기본값: 오늘 날짜부터 2주 후까지
+today = datetime.now()
+two_weeks_later = today + timedelta(days=14)
+START_DATE = os.getenv('START_DATE', today.strftime('%Y-%m-%d'))
+END_DATE = os.getenv('END_DATE', two_weeks_later.strftime('%Y-%m-%d'))
 
 # 대기 시간 설정 (초)
 SHORT_DELAY = 1
