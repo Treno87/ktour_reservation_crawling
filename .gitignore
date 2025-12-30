@@ -4,71 +4,36 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual Environment
-venv/
 env/
-ENV/
-.venv
+venv/
+*.egg-info/
+dist/
+build/
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# 환경 변수 및 인증
+.env
+credentials.json
 
-# Logs
+# 로그 파일
 *.log
-logs/
 
-# Output
+# 출력 파일
 output/
 *.csv
 *.xlsx
 *.json
-!prices.json
 
-# Credentials
-credentials.json
-
-# Claude Code
-.claude/
-
-# Environment variables
-.env
-.env.local
+# IDE
+.vscode/
+.idea/
+*.code-workspace
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Chrome driver
-chromedriver
-chromedriver.exe
-
-# Temporary files
+# 임시 파일
 *.tmp
-temp/
-
-# Test files
-test_*.py
-*_preview.txt
-
-# VS Code workspace
-*.code-workspace
+*.bak
+*.swp
+*~
